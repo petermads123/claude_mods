@@ -49,6 +49,8 @@ a commit on `main` is refused even straight after `git checkout -b`.
 
 Stdlib only: `jq` may not be available and hook commands default to
 Git Bash on Windows, so the usual shell recipe does not work here.
+
+Vendored from template_repo, whose test suite covers it; a fix goes there first.
 """
 
 from __future__ import annotations
@@ -56,11 +58,10 @@ from __future__ import annotations
 import json
 import re
 import shlex
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-
-from plan_state import current_branch
 
 PROTECTED = "main"
 
@@ -137,6 +138,9 @@ UNRESOLVED = "?"
 #: boundaries: "committee" is not a commit.
 RISKY_SUBCOMMANDS = ("commit", "push")
 RISKY_PATTERN = re.compile(r"\b(?:" + "|".join(RISKY_SUBCOMMANDS) + r")\b")
+
+#: Seconds to wait for git to name the current branch before giving up.
+GIT_TIMEOUT_SECONDS = 10
 
 
 @dataclass(frozen=True)
@@ -515,6 +519,37 @@ def violation(command: str, branch: str) -> str:
             effective = target
 
     return ""
+
+
+def current_branch(project_dir: Path) -> str:
+    """Name the branch currently checked out.
+
+    Inlined from template_repo's `plan_state`, which this repo does not carry.
+    A detached HEAD and a failed git call both report as an empty string, since
+    neither gives a branch a caller could act on.
+
+    Args:
+        project_dir: Repository root.
+
+    Returns:
+        The branch name, or an empty string if git could not say.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=str(project_dir),
+            capture_output=True,
+            text=True,
+            timeout=GIT_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        # ValueError: a NUL in the path, or output the locale cannot decode.
+        return ""
+    if result.returncode != 0:
+        return ""
+    lines = [line for line in result.stdout.splitlines() if line.strip()]
+    return lines[0].strip() if lines else ""
 
 
 def main() -> None:

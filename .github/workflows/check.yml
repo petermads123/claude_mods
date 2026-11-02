@@ -1,0 +1,34 @@
+name: check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The whole history, so the checker can compare each mod with main.
+          fetch-depth: 0
+      - name: Check the marketplace and the mods
+        env:
+          # A push to main is compared with main before the push: by then HEAD
+          # is main, and comparing main with itself would find nothing changed.
+          BEFORE: ${{ github.event_name == 'push' && github.event.before || '' }}
+        run: |
+          # Empty on a pull request, and all zeros on the push that creates main.
+          case "$BEFORE" in
+            *[!0]*) python3 scripts/check_mods.py --no-cli --base "$BEFORE" ;;
+            *) python3 scripts/check_mods.py --no-cli ;;
+          esac
+      - name: Test the tooling
+        # Run even when the check above fails, so one run reports both.
+        if: ${{ !cancelled() }}
+        run: python3 -m unittest discover -s tests -v
