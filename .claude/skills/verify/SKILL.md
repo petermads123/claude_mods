@@ -1,101 +1,45 @@
 ---
 name: verify
-description: Step 4 of the feature pipeline. The static half of verification — ruff, mypy, module showcases, and a literal check that the code matches the planned public signatures and that STRUCTURE.md is in sync. Runs inside /build as a subagent, after implementing and before writing tests.
-argument-hint: [slug, if more than one plan exists]
-model: sonnet
-effort: high
+description: Check the marketplace and its mods — marketplace.json and every plugin.json agree, each changed mod's version is raised above main's with a changelog section, the README lists every mod, generated types are not tracked, and claude plugin validate and the mods' tests pass. Use before every commit and pull request, after changing anything under plugins/, or when the user asks whether the mods are in order.
+argument-hint: [mod]
 ---
 
-# Step 4 — Verify
+# /verify — check the mods
 
-Does the code that exists match the code that was planned, and is it well-formed? This step
-is static: no new tests are written here, and `pytest` runs only to confirm nothing already
-in the suite broke.
+No `model` or `effort` here on purpose: `/mod` and `/release` run this skill mid-turn, and a pin
+would switch the rest of their turn to it.
 
-This step runs unattended, as a subagent of `/build`. A failure here is yours to fix — once.
-The same failure back after the fix is a halt; the rules are in `/build` and in your brief.
+1. Run `python scripts/check_mods.py`, adding `--mod <mod>` when one was named. It checks the
+   marketplace file, each mod's files, version and changelog against `main`, the README and the
+   generated types, then runs `claude plugin validate` on the marketplace and each mod and
+   `claude plugin test` on each mod that has tests.
+2. Fix every `error:` line at its cause, then run the script again:
 
-## 1. Run the tools
+   | The error says | Fix |
+   |---|---|
+   | changed since main but version is still X | raise the version once, by the table in `.claude/rules/mods.md`, and add its changelog section — once the user has agreed the bump (`/mod` step 1) |
+   | version is not X.Y.Z | three whole numbers without leading zeros, no `v`, no suffix |
+   | no CHANGELOG.md section for X | add `## X — YYYY-MM-DD` at the top of the mod's `CHANGELOG.md` |
+   | a folder under plugins/ that no entry lists | add `{ "name": "<mod>", "source": "./plugins/<mod>" }` to `.claude-plugin/marketplace.json` |
+   | version lives in plugin.json only | delete `version` from the marketplace entry |
+   | README does not mention `<mod>@claude-mods` | add the mod's row and install line to `README.md` |
+   | generated types are tracked | `git rm --cached -r plugins/<mod>/.claude-plugin/types` |
+   | author missing | `"author": { "name": "Peter" }` in the mod's `plugin.json` |
+   | description missing | in the file the error names: the mod's own `plugin.json`, or the top of `marketplace.json`. `claude plugin validate --strict` fails without either |
+   | modules must name exactly one hooks module | one entry in `hooks/hooks.json`, such as `["./register.tsx"]` |
+   | types must start with "./" | `"types": "./types/index.d.ts"`, forward slashes |
+   | a name Claude Code reserves | rename the mod before it ships; see Names in `.claude/rules/mods.md` |
+   | git ... failed, or shares no history with HEAD | fix git first, as the error says (a shallow clone: `git fetch --unshallow`); never read it as "nothing changed" |
+   | claude plugin validate / test failed | read the output it quotes; the plugin-authoring skill's reference explains the engine's refusals |
 
-All of them, and report the actual output rather than a summary:
+   An error that comes back a second time for the same reason means the fix was a guess: stop
+   and tell the user what fails and what you tried. So does a fix that needs the user's decision,
+   such as a bump on an edit nobody agreed.
+3. Report warnings too. Fix the ones that are plainly slips, such as a version that jumps past
+   the next one or a changelog section out of order; leave the rest to the user.
+4. Report one line per mod — `<mod>: main <old> → <new>, validated, <n> test files` or `no
+   tests` — then the script's last lines, including the Claude Code version that validated.
+   If the script said the `claude` CLI was missing, say plainly that nothing was validated.
 
-```powershell
-ruff check .
-ruff format --check .
-mypy
-pytest
-```
-
-Any failure is fixed here and the whole set re-run from the top. Never add a bare `# noqa`
-or an uncoded `# type: ignore` to get past one — `.claude/rules/python.md` gives the form a
-justified suppression has to take, and anything else is hiding the problem rather than
-solving it.
-
-## 2. Check the plan was actually built
-
-The part a linter cannot do. Take the Public API table from section 2 of the plan file and,
-for each row, confirm the code defines that name with that exact signature — parameter
-names, defaults, annotations, return type.
-
-Report a table of the result. For each mismatch, say which it is:
-
-- **Missing** — planned, not written. Write it.
-- **Deviation** — written differently on purpose. It should already be recorded in section
-  3 and corrected in section 2. If it is not, that is a step 3 omission: record it now and
-  say so.
-- **Unplanned** — public surface that no plan entry and no acceptance criterion asked for.
-  Either justify it in section 3 or remove it. Public API that nobody asked for is the
-  cheapest thing to delete today and the most expensive thing to delete in a year.
-
-## 3. Check STRUCTURE.md
-
-Use the `structure-auditor` rather than eyeballing it: it catches the signature drift the
-stop gate cannot see. Inside `/build` a subagent cannot start another agent, so the
-orchestrator runs it just before this step and its report is in your brief. Run
-standalone, start it yourself:
-
-```
-Agent with subagent_type: "structure-auditor"
-```
-
-Apply the edits it returns — it is read-only by design. Inside `/build` its report
-describes the code as step 3 left it, before the fixes you made under sections 1 and 2 of
-this skill: check
-each edit against the code as it stands, skip one your changes superseded, and update
-`STRUCTURE.md` by hand for anything you added, removed or re-signed, saying so in the trace.
-If the brief says the auditor failed or returned nothing, compare `STRUCTURE.md` with the
-code by hand, and say so in the trace.
-
-## 4. Run every new module standalone
-
-Each new module's `main()` showcase has to actually work:
-
-```powershell
-python -m <package>.<module>
-```
-
-Read the output, not just the exit code, and check the showcase is in the form
-`.claude/rules/python.md` requires: every argument bound to a named variable, the call on
-its own line, the result named, then printed, with the accepted values listed in a same-line
-comment wherever an argument takes one of a fixed set. A showcase that prints nothing a
-reader could learn from is not a showcase, and one with its arguments inline is not in the
-required form — the whole point is that someone can change an input and re-run without
-untangling the call. Fix either here. Expect a `RuntimeWarning` when the module is also
-re-exported from `__init__.py` — that is normal and is explained in the rules.
-
-## 5. Record, commit, push
-
-Fill section 4 of the plan file: the command output, the plan-completeness table, the
-auditor's findings and what was done about them, the showcase output.
-
-Commit everything this step changed — fixes, `STRUCTURE.md`, the plan file — with subject
-`Verify: <title>` and the round file in the body, then push. Clean tree at the end.
-
-## Stop here
-
-1. Mark step 4 `done` and set the marker to `<!-- claude-plan step=5 status=active -->`.
-   That edit goes in the commit above.
-2. Report, in the `/build` contract: `STATUS`, and a `TRACE` with every check and its
-   result, every mismatch from section 2 and how it was resolved, and a line per function
-   whose code was changed here to get green.
-3. End. `/build` opens step 5; do not.
+The report is this run's output. Never report the mods as checked from memory or from an earlier
+run.

@@ -1,36 +1,13 @@
 {
   "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$(command -v python3 || command -v python)\" \"$CLAUDE_PROJECT_DIR/.claude/hooks/session_brief.py\"",
-            "timeout": 30
-          }
-        ]
-      }
-    ],
     "PreToolUse": [
       {
         "matcher": "Bash|PowerShell",
         "hooks": [
           {
             "type": "command",
-            "command": "\"$(command -v python3 || command -v python)\" \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_git.py\"",
+            "command": "f=\"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_git.py\"; [ -f \"$f\" ] || exit 0; \"$(command -v python3 || command -v python)\" \"$f\"",
             "timeout": 30
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$(command -v python3 || command -v python)\" \"$CLAUDE_PROJECT_DIR/.claude/hooks/lint_py.py\"",
-            "timeout": 90
           }
         ]
       }
@@ -40,8 +17,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$(command -v python3 || command -v python)\" \"$CLAUDE_PROJECT_DIR/.claude/hooks/stop_gate.py\"",
-            "timeout": 320
+            "command": "f=\"$CLAUDE_PROJECT_DIR/.claude/hooks/mod_gate.py\"; [ -f \"$f\" ] || exit 0; \"$(command -v python3 || command -v python)\" \"$f\"",
+            "timeout": 150
           }
         ]
       }
@@ -49,22 +26,36 @@
   },
   "permissions": {
     "allow": [
-      "Bash(ruff:*)",
-      "Bash(mypy:*)",
-      "Bash(pytest:*)",
-      "Bash(python -m:*)",
       "Bash(git status:*)",
       "Bash(git diff:*)",
       "Bash(git log:*)",
+      "Bash(git show:*)",
       "Bash(git branch:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(git ls-files:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(git push:*)",
       "Bash(git fetch:*)",
+      "Bash(git pull:*)",
       "Bash(git checkout:*)",
       "Bash(git switch:*)",
       "Bash(git merge:*)",
-      "Bash(git mv:*)"
+      "Bash(git merge-base:*)",
+      "Bash(git mv:*)",
+      "Bash(git rm --cached:*)",
+      "Bash(python scripts/check_mods.py:*)",
+      "Bash(python3 scripts/check_mods.py:*)",
+      "Bash(python -m unittest:*)",
+      "Bash(python3 -m unittest:*)",
+      "Bash(claude plugin validate:*)",
+      "Bash(claude plugin test:*)",
+      "Bash(claude plugin list:*)",
+      "Bash(claude plugin details:*)",
+      "Bash(claude plugin marketplace list:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr checks:*)"
     ]
   }
 }

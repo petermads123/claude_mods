@@ -1,350 +1,130 @@
 # Working in this repo
 
-@STRUCTURE.md
+This repo is **claude-mods**, a Claude Code plugin marketplace holding Peter's mods: plugins whose
+hooks module changes Claude Code's own interface or behaviour. Machines install the mods from it
+(`claude plugin install <mod>@claude-mods`), and every change to what a mod ships raises its
+version so those machines pick the change up. The repository is public on GitHub as
+`petermads123/claude_mods`.
 
-`STRUCTURE.md` above is the map of what lives where. Read it before searching the repo, and
-update it in the same change whenever a module or public signature changes.
+## Map
 
-## This repo has not been set up yet
+```
+.claude-plugin/marketplace.json   the marketplace "claude-mods": one entry per mod, name and source only
+plugins/<mod>/                    one folder per mod; layout in .claude/rules/mods.md
+scripts/check_mods.py             the checker: marketplace, mods, versions, README, validate, tests
+tests/                            unittest suites for the checker and the hooks
+.claude/rules/mods.md             mod conventions, loaded whenever a file under plugins/ is read
+.claude/skills/                   /mod, /verify, /release, /sync-mods
+.claude/hooks/                    guard_git.py (PreToolUse), mod_gate.py (Stop)
+.github/workflows/check.yml       CI: the checker without the CLI, and the tests
+README.md                         the mod list and the install lines
+```
 
-It was created from a template and still carries the template's package name. **Before
-anything else in the first conversation, invoke `/repo-setup`.** It asks what the repo is
-for, writes that into the README, renames the package to match the repository, offers the
-branch ruleset, and then deletes this block so it never runs again.
+The mods themselves are listed in `.claude-plugin/marketplace.json`, the one source of truth;
+`README.md` repeats them for people, and the checker holds the two together.
 
-If the user arrives with a task instead, say setup comes first and takes a couple of
-minutes — a rename afterwards touches imports, tests and every file that names the package.
-## The implementation pipeline
+## The pipeline
 
-Anything that is not cosmetic goes through ten steps. State lives in
-`development/<branch>/NN-<round-slug>.md`, not in the conversation, and every step commits
-and pushes it, so work survives a context reset or a new session and any session resumes
-from the branch. One folder per branch, one numbered file per round; a recommendation
-accepted at step 8 opens the next round on the same branch.
-
-| # | Step | Skill | Produces | Waits for |
-|---|---|---|---|---|
-| 1 | Conceptualize | `/conceptualize` | Agreed concept, acceptance criteria, the branch, the version bump | the user |
-| 2 | Plan | `/plan` | Modules, signatures, implementation guide, test intents | the user, only if the critic leaves something open |
-| 3 | Implement | `/build` → `/implement` | Working code | — |
-| 4 | Verify | `/build` → `/verify` | ruff, mypy, plan completeness, STRUCTURE.md | — |
-| 5 | Test | `/build` → `/test` | Edge-case suite, pytest green | — |
-| 6 | Concept check | `/build` → `/concept-check` | Audit against step 1, not step 2 | — |
-| 7 | Ship | `/build` → `/ship` | Round closed, whole tree green | — |
-| 8 | Recommend | `/recommend` | Critical follow-ups only, usually none; lesser ideas noted in `DEVELOPMENT.md` | the user, only if there is one |
-| 9 | Pull request | `/create-pr` | Whole-branch re-verification, the version bump written, then a PR to `main` | the user, before publishing |
-| 10 | Review | `/watch-pr` | Hourly check until the PR merges or closes | — |
-
-`/feature <what to build>` starts the pipeline by opening step 1. In a session that is
-already mid-pipeline it reports the step instead.
-
-`/fix <symptom>` starts the same pipeline from a defect. It reproduces the symptom, finds
-the root cause, sizes the class of inputs the cause breaks and has a `diagnosis-critic` try
-to falsify the cause — all **before** step 1 opens — and routes to `/feature` or
-`/small-change` instead when the diagnosis says it is not a bug. There is no second
-pipeline: a **fix round** is one whose section 1 carries a filled **Defect** block, and
-nothing else marks it — a round `/fix` opens as round 1 takes the `fix/` prefix, and a
-later round opened on a bug report gets the block whatever its folder is called, while a
-follow-up round in a `fix/` folder that is not itself a defect does not. The steps that
-behave differently read the block from the plan file, and no hook needs to know:
-
-| Step | On a fix round |
-|---|---|
-| 1 | Starts from the Defect block, asks whether the fix covers this instance or the whole class, and always writes a reproduction criterion first and a regression criterion last |
-| 2 | Plans against the Root cause row, and the `plan-critic` checks the plan removes the cause rather than the site of the symptom |
-| 3 | Writes the reproduction as a test and runs it red before fixing; a reproduction that is already green halts the build |
-| 5 | Extends the test file step 3 added the reproduction to, and leaves that test as written |
-| 6 | Cites the red run and the green run for the reproduction, and more than a green suite for the regression criterion |
-| 8 | Runs one `brainstormer`, lens `defect-class`: the same cause elsewhere, and what let this ship; held to the same critical-only bar |
-| 9 | Puts the Defect block's Observed, Root cause and Scope rows in the pull request body, so the reviewer sees the cause |
-
-Exactly one plan file across the repo carries `status=active`. When step 8 opens the next
-round, the round before it becomes `done` and the new file takes over. Step 9 marks the
-newest round `done` in the commit that opens the pull request, so nothing on `main` ever
-says a build is in flight and no commit exists only to tidy up afterwards.
-
-### Three gates, one unattended block
-
-The user decides at most three times: they confirm the concept (step 1), accept the plan
-(step 2) when its critic leaves something open, and decide any critical follow-up (step 8),
-plus a yes before step 9 publishes. A plan the `plan-critic` passes clean — every finding
-applied, none rebutted, nothing put to the user — is accepted on that strength and goes
-straight to the build; `/plan` holds the exact rule. Most rounds have no critical
-follow-up, and then step 8 records `None.` and hands straight to step 9. Everything
-between the plan and step 8 — **steps 3 to 7** — is `/build`: one
-skill that runs the five steps in order without asking, each in its own subagent on the
-model that step pins, committing and pushing after each.
-
-The build **halts** and hands back to the user on exactly two things:
-
-1. anything that would amend section 1 — a deviation that breaks an acceptance criterion,
-   a case the concept never decided, a criterion that turns out to be wrong;
-2. a gate failing twice for the same reason — one fix attempt is the build's, a second
-   failure means the fix was a guess.
-
-Everything else — a red check, a bug the tests find, a signature that had to change — is
-the build's to handle. A halt commits what exists, red or not, writes a `Halted` section
-into the plan file with the question, and ends the turn; `/build` resumes from the marker
-once the user answers.
-
-The user is not watching the build, so each step reports a **trace** — a line or two per
-module, class, function and test group it produced — and `/build` relays every trace to the
-chat verbatim as the step returns. That is their window into the work.
-
-### More eyes where the work diverges
-
-Most steps have one right answer and one agent is enough. Four do not, and there a second
-reader is cheap insurance against one author's blind spots:
-
-| Step | Extra readers | Why there |
+| Stage | Skill, step | Waits for |
 |---|---|---|
-| `/fix`, before 1 | one `diagnosis-critic` | A wrong root cause ships a fix that passes its own reproduction while the bug stays |
-| 2 Plan | one `plan-critic` | The plan is the last thing anyone re-thinks before the build runs unattended |
-| 5 Test | two `test-designer` briefs, `input-space` and `contract` | Edge cases from the parameters and from the promises are different lists |
-| 6 Concept check | none extra | Running as its own subagent already makes it an independent read |
-| 8 Recommend, fix round only | one `brainstormer`, lens `defect-class` | The same cause elsewhere is the one follow-up a fix reliably has, and its author is the last to see it |
+| Agree the change: the mod, what it does, the version bump | `/mod` 1 | the user |
+| Branch, bump, build, verify, commit | `/mod` 2–5 | — |
+| Try it live | `/mod` 6 | the user |
+| Push and open a pull request | `/release` 1–3 | the user's yes, before publishing |
+| Merge, tag the release, delete the branch | `/release` 4–5 | the user's instruction to merge |
 
-Read-only agents run in parallel; anything that writes runs alone. The calling step merges
-what comes back, applies or rebuts each finding on the record, and stays the one voice in
-the code and the plan file. A step's subagent cannot start another agent, so inside
-`/build` the orchestrator runs step 5's designers, and the `structure-auditor` before steps
-4 and 6, and hands their reports over in the step's brief.
+`/verify` runs the checks on their own. `/sync-mods` installs or updates the mods on a machine.
 
-### Each step picks its own model
+The waits are the user's. Never take the confirmation at `/mod` 1, the "it works" at `/mod` 6,
+the yes at `/release` 2 or the instruction to merge for them: not because the answer looks
+obvious, not to save time.
 
-Every skill pins `model` and `effort` in its frontmatter, and steps 3 to 7 run as subagents
-because a skill's override lasts the turn. The per-step table and the reasoning behind each
-choice live in `.claude/skills/build/models.md`.
+## Routing
 
-### Review and merge
-
-| Fact | Value |
-|---|---|
-| Approver | `petermads123` |
-| Merge method | the repository's configured default |
-
-Step 9 requests a review from the approver when it opens the pull request.
-
-**Claude never merges on its own judgment, and never on an approval alone.** A pull request
-reaches `main` either because the approver pressed the button themselves, or because they
-explicitly told Claude to merge it. An approval says the change is wanted; it does not say
-ship it now, and it does not start a merge. Neither does a green tree or every precondition
-being satisfied at once — those make a merge permissible, never due.
-
-Once told, the instruction authorises the merge but waives nothing: it must not be stale
-(anything pushed since means they are approving code they have not seen), CI green where
-there is CI, no merge conflict, and every review thread resolved where the ruleset demands
-it. If one fails, say which and wait. Never approve anything yourself.
-
-**Once a pull request has merged, Claude deletes its branch** — whether the approver
-pressed the button or Claude merged on their instruction — after confirming from the
-repository that the branch head is an ancestor of `main`. A branch closed without merging
-is left alone. Step 10 does this as part of closing out; no separate permission is needed.
-
-Where a review request is refused, step 9 **assigns** the approver instead — GitHub permits
-assigning an author even though it refuses to make them a reviewer. It gates nothing, but it
-puts the pull request in their *Assigned* queue rather than only in *Created*.
-
-**GitHub will not let anyone request a review from, or approve, their own pull request.** In
-a solo repo every pull request Claude opens is authored by the person who would approve it,
-so the review route is unavailable and waiting for an approval that cannot exist would wedge
-the pipeline. There the merge signal is an unambiguous instruction from the approver in a
-pull request comment — "merge it", "approved, go ahead". Read it narrowly: "looks good" on
-one thread is feedback, not authorisation to merge. When unsure, ask.
-
-### Step 10 runs until the pull request closes
-
-Opening the pull request is not finishing the work: `/create-pr` invokes `/watch-pr` unasked,
-and it runs until the pull request merges or closes. How it re-checks, routes review comments
-and handles bot findings lives in that skill.
-
-### The gates are the point
-
-**Step 1 ends on a question, and so do step 2 when its critic leaves something open and
-step 8 when it has a critical follow-up; each waits for the answer.** Step 2 with a clean
-critique hands on to the build, and step 8 with nothing critical to step 9, whose question
-before publishing still waits. Never take a user's gate for them: not because the answer
-looks obvious, not because they seem to want speed. A clean critique is not "looks
-obvious" — it is `/plan`'s rule applied literally, and a plan that falls short of it in
-any way waits. The user's confirmation at step 1 opens step 2 in the same turn, and their
-acceptance at step 2, or a clean critique, opens the build — those are a gate passed, not
-Claude skipping one.
-
-The gates are where the work is cheap to redirect: a concept costs a conversation to
-change, a plan a revision, and a build that halts costs whatever it built. A build that
-runs on a plan with a critic's finding still open has skipped the only decision that
-mattered.
-
-Going *backwards* needs no permission. A failing test that reveals an unsettled concept
-belongs back at step 1, and saying so — as a halt, from inside the build — is always right.
-
-## What to invoke
+The user never has to type a slash command. Classify what they ask before touching anything, say
+the route in one line, then take it:
 
 | Situation | Use |
 |---|---|
-| New module, new public function, behavior change, anything needing a design decision | `/feature` |
-| Something that exists behaves wrongly — wrong output, a crash, a guard that lets something through | `/fix` |
-| Rename, docstring wording, plot styling, message text, formatting | `/small-change` |
-| Resuming work already in flight | The step's own skill, or `/feature` to check state |
-| A build that halted, once the question is answered | `/build` |
-| Need edge cases for a function | `test-designer` subagent, `input-space` or `contract` brief |
-| A root cause that needs a second reader before a fix is agreed on it | `diagnosis-critic` subagent, from `/fix` |
-| A plan that needs a second reader | `plan-critic` subagent |
-| Ideas for what to build next, when the user asks for them | `brainstormer` subagent, one lens per run |
-| STRUCTURE.md looks out of sync with the code | `structure-auditor` subagent |
-| Broad "where is X" search across the repo | built-in `Explore` subagent |
+| A new mod, a change to a mod, a bug in a mod, bringing in a mod from `~/.claude/dev-mods` or `~/.claude/mods` | `/mod` |
+| Whether the mods are in order; before any commit | `/verify` |
+| Publishing finished work, opening the pull request, closing out a merged one | `/release` |
+| Installing or updating the mods on this machine, setting up another machine | `/sync-mods` |
+| This repo's own tooling or docs — the checker, the hooks, the skills, CI, the README | a `chore/` or `docs/` branch off an up-to-date `main`, the change, `python -m unittest discover -s tests` and `/verify`, a commit, then `/release` |
+| A question | an answer, not a pipeline |
 
-### Small or large?
+An explicit slash command wins over the routing.
 
-It is **not** a small change if it does any of these:
+## Versions — the important part
 
-- adds or removes a file
-- changes a public signature
-- changes behavior
-- needs a new test
-
-Any one of them routes to `/feature`. Everything else is `/small-change`.
-
-A defect fails the third line every time — fixing a bug changes behaviour by definition —
-and takes `/fix` rather than `/feature`, because the question a bug raises first is not
-small-or-large but bug-or-not, and only a diagnosis answers that.
-
-### Routing is Claude's job, not the user's
-
-**The user never has to type a slash command.** When they describe work in prose — "I want
-to add X", "can you change Y", "this should really do Z" — classify it against the test
-above *before touching anything*, and act on the classification:
-
-- **Clearly small** — say so in one line with the reason, then make the change under
-  `/small-change`.
-- **Clearly not small** — say so in one line with the reason, then start `/feature`.
-- **A defect** — "this returns the wrong thing", "this crashes on", "this should have been
-  refused" — say so in one line, then start `/fix`. It diagnoses before anything is agreed
-  and routes back to `/feature` or `/small-change` on its own if it turns out not to be a
-  bug.
-- **Genuinely ambiguous** — ask, with `AskUserQuestion`, offering the routes in question and what
-  each would mean for this particular request. Do not resolve a coin flip by guessing.
-
-Announce the routing either way. A one-line "small: local rename, no signature or behaviour
-change" lets the user correct a wrong call before it costs anything.
-
-**When it is close but not a coin flip, route up.** `/feature` step 1 is a conversation, so
-an over-routed change costs a single sentence to correct — "this is tiny, just do it" — but
-an under-routed one skips the concept, the tests and the concept check, and nobody finds out
-until much later. The two mistakes are not equally expensive.
-
-Three things this rule does *not* cover:
-
-- **An explicit slash command wins.** If the user types `/small-change`, that is the route,
-  even if you would have chosen otherwise. Say so if you disagree, then do as asked.
-- **A question is not a work request.** "How does the stop gate decide?" or "where does X
-  live?" gets an answer, not a pipeline.
-- **A plan already in flight takes precedence.** If a plan file is `active`, a new request
-  is usually part of *that* work: the current step, a step to go back to, or a step 8
-  recommendation. Check the active plan before starting a second pipeline — the session
-  brief reports two active plans as a mistake, and the hooks then guess which one is
-  meant.
-
-Never start editing code because a request sounded simple. Skipping the classification is
-the failure this section exists to prevent.
-
-## Conventions
-
-`.claude/rules/python.md` loads automatically whenever a `.py` file is read or edited, so
-the conventions are already in context — you do not need to invoke anything to get them.
-A subagent does not get that for free: the build's steps read the file themselves.
-
-## Development notes: `DEVELOPMENT.md`
-
-A file at the repo root for development-side open questions and things to fix later. Steps
-1, 8 and 10 add entries — step 8's are the ideas that fell short of a critical
-recommendation — and step 9 checks the branch removed the ones it resolved. Step 8 ends
-every round by cleaning the file: entries the branch resolved are removed, duplicates are
-merged, and only open items are left. The change that resolves an entry deletes it — the
-procedure for adding and cleaning entries lives in the skills, not here.
+- A mod's version lives in its `plugin.json` and nowhere else; never in `marketplace.json`.
+- A branch that changes anything a mod ships raises that mod's version above `main`'s, once,
+  with a `CHANGELOG.md` section for the new version. What ships and the bump table are in
+  `.claude/rules/mods.md`. Mods are versioned one by one, never together.
+- Machines that installed from GitHub only take a change that comes with a new version, so an
+  unbumped change never reaches them. Never lower a version: Claude Code applies any different
+  version as an update, a lower one included.
+- After each merge, `claude plugin tag` marks every released version on `main` as
+  `<mod>--v<version>`.
+- The checker, the Stop hook and CI all refuse a changed mod whose version has not moved.
 
 ## Branches
 
-Never commit to `main`; it is protected on the remote and `.claude/hooks/guard_git.py`
-refuses the command. Branch names are `type/kebab-case`:
+Never commit to `main`: `.claude/hooks/guard_git.py` refuses the command. Branch names are
+`type/kebab-case`, a mod's branch carries the mod's name, and the commit type matches the prefix:
 
 | Prefix | Use for |
 |---|---|
-| `feat/` | new behavior |
-| `fix/` | corrected behavior |
-| `refactor/` | changed structure, identical behavior |
+| `feat/` | a new mod (`feat/<mod>`); new or changed behaviour or looks (`feat/<mod>-<slug>`) |
+| `fix/` | a defect (`fix/<mod>-<slug>`) |
+| `refactor/` | a mod's code restructured, behaviour unchanged (`refactor/<mod>-<slug>`) |
+| `chore/` | the checker, hooks, skills, CI, settings |
 | `docs/` | prose only |
-| `test/` | test-only additions |
-| `chore/` | tooling, dependencies, config |
 
-Examples: `feat/csv-export`, `fix/greet-unicode-crash`, `refactor/split-solver-module`,
-`chore/bump-ruff`. The branch is chosen and created at the close of step 1, and its plan
-folder is named for it: `development/feat/csv-export/`. A branch a hosted session starts
-on — `claude/<random-words>` — is a placeholder named before the scope existed: nothing is
-committed to it, and step 1 branches the agreed name off `main` and pushes there instead.
-Only if the environment refuses that push does the work fall back to the session's branch;
-the folder then keeps the conventional name and the plan's Branch row records the real one.
+The prefix says what kind of change it is; the bump table says how far the version moves. A
+colour tweak is a `feat/` branch and a patch bump.
 
-## Versions
+## Review and merge
 
-`version` in `pyproject.toml` is the package's version, `MAJOR.MINOR.PATCH`, and the
-pipeline is what moves it. Step 1 decides each branch's bump alongside its name and records
-it in the plan's Version row; step 9 writes it, counted from `main`'s version at that
-moment, so two branches open side by side never both claim the same number from a stale
-base.
-
-| Bump | Moves | For |
-|---|---|---|
-| `patch` | x.y.**Z** | a fix; a refactor that changes no behaviour; a dependency change |
-| `minor` | x.**Y**.0 | a change to something that exists; a small addition to it |
-| `major` | **X**.0.0 | a large new feature — a new endpoint, model, subpackage or capability |
-| `none` | — | nothing that ships changes: tests, docs, plan files, `.claude/`, tooling |
-
-A branch that does several of these takes the largest. The scale measures size, not
-compatibility: unlike strict SemVer, a change that breaks an existing caller is a `minor`
-unless it is also large. A later round may raise its branch's bump, never lower it.
-`/small-change` never bumps.
-The procedure lives in `/conceptualize` and `/create-pr`, and `/watch-pr` re-counts the
-bump if `main`'s version moves while the pull request is open.
+The approver is `petermads123`. **Claude never merges on its own judgment, and never on an
+approval alone**: a pull request reaches `main` because the approver pressed the button, or told
+Claude in so many words to merge it. Once told, the instruction waives nothing: nothing pushed
+since they looked, `check` green, no conflict. Claude merges with a merge commit. After a merge,
+Claude deletes the branch once `git merge-base --is-ancestor` confirms its head is on `main`; if
+the button squashed or rebased, the head is not on `main` and Claude asks first. A branch closed
+without merging is left alone. `/release` holds the steps.
 
 ## Commands
 
-Run from the repo root with `.venv` active. All four must pass before a PR:
+From the repo root:
 
-```powershell
-ruff check .
-ruff format --check .
-mypy
-pytest
+```
+python scripts/check_mods.py                 # everything, including claude plugin validate and tests
+python scripts/check_mods.py --mod <mod>     # one mod, plus the marketplace-wide checks
+python scripts/check_mods.py --no-cli        # the quick half, as CI and the Stop hook run it
+python -m unittest discover -s tests -v      # the tooling's own tests (several minutes on Windows)
+claude plugin validate --strict plugins/<mod>
+claude plugin test plugins/<mod>             # only for a mod with *.test.ts(x); it fails on one without
 ```
 
-## Automation already in place
+## Automation in place
 
-- **At session start**, `.claude/hooks/session_brief.py` reports the active plan and the
-  step it is on. Silent when nothing is in flight.
-- **Before every `Bash` or `PowerShell` call**, `.claude/hooks/guard_git.py` refuses a
-  commit or push that would land on `main`, including inside a compound command.
-  `settings.json` pre-approves the git commands the pipeline needs — add, commit, push,
-  fetch, checkout, switch, merge — so an unattended build never stalls on a permission
-  prompt; the guard is what makes that safe.
-- **After every `Write`/`Edit` of a `.py` file**, `.claude/hooks/lint_py.py` runs
-  `ruff format` and `ruff check --fix` on that file. Formatting is handled for you; only
-  unfixable errors come back.
-- **Before a turn ends**, `.claude/hooks/stop_gate.py` decides how strict to be from the
-  active plan's step. Steps 1 to 7 are advisory: the build carries its own gates at steps
-  4, 5 and 7, and a halt has to be able to end the turn on a red tree. From step 8, and
-  whenever no plan is active, it blocks — when a Python file changed in the tree or on the
-  branch — if ruff, mypy or pytest fail, if `STRUCTURE.md`
-  does not mention a module that exists on disk, if a test file sits outside `tests/` where
-  `pytest` would never collect it, or if a package directory under `src/` has no
-  `__init__.py`. Create `.claude/.skip-gate` to bypass it deliberately.
+- **Before every `Bash` or `PowerShell` call**, `guard_git.py` refuses a commit or push that would
+  land on `main`. `settings.json` pre-approves the git commands the pipeline uses, the checker,
+  the tests and the read-only `claude plugin` and `gh` commands; the guard is what makes that safe.
+  Tagging, opening and merging pull requests and changing plugin installs still ask, on purpose:
+  each follows a yes from the user.
+- **Before a turn ends**, `mod_gate.py` runs `check_mods.py --changed --no-cli` on the checkout
+  Claude is working in, a worktree included. On a work branch it blocks the turn once while the
+  checker reports an error, and at the next stop only shows what still fails. On `main` or a
+  detached HEAD it only shows the errors, since nothing there can be committed. When a fix needs
+  the user — a bump they have not agreed, a check that failed twice — tell them what it reported
+  rather than fixing past their decision. Create `.claude/.skip-gate` to bypass it deliberately.
+- **On every pull request and push to `main`**, CI runs `check_mods.py --no-cli` and the tests.
 
-Hooks are read at session start. If you change anything under `.claude/hooks/` or
-`.claude/settings.json`, Claude Code must be restarted before it takes effect. Skills and
-rules hot-reload without a restart.
+Claude Code watches its settings files, so edits to hooks and permissions apply to the running
+session, and the hook scripts run fresh on every call. Skills and rules reload without a restart
+too.
 
-## Growth
-
-Keep this file a routing map. When guidance grows past routing, move it into a skill — a
-skill's body loads only when used, while everything here is in context every session. Facts
-and routing stay; procedures become skills.
+The tooling is Python, standard library only, for Python 3.10 and later. `guard_git.py` is
+vendored from the template repo, whose suite covers it; a fix to it goes there first.
