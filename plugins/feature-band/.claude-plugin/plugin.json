@@ -1,0 +1,9 @@
+{
+  "name": "feature-band",
+  "version": "0.1.0",
+  "description": "Shows the feature pipeline's round and step progress above the prompt",
+  "author": {
+    "name": "Peter"
+  },
+  "types": "./types/index.d.ts"
+}

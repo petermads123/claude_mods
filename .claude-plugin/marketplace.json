@@ -3,6 +3,7 @@
   "description": "Peter's Claude Code mods: plugins that change Claude Code's own interface and behaviour",
   "owner": { "name": "Peter" },
   "plugins": [
-    { "name": "usage-band", "source": "./plugins/usage-band" }
+    { "name": "usage-band", "source": "./plugins/usage-band" },
+    { "name": "feature-band", "source": "./plugins/feature-band" }
   ]
 }

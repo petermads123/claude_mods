@@ -8,6 +8,7 @@ plugin marketplace, so any machine can install them and update them to each new 
 | Mod | What it does | Install |
 |---|---|---|
 | `usage-band` | Shows the 5-hour and weekly usage windows above the prompt | `claude plugin install usage-band@claude-mods` |
+| `feature-band` | Shows the feature pipeline's round and step progress above the prompt (repos made from `petermads123/template`) | `claude plugin install feature-band@claude-mods` |
 
 They are checked with the Claude Code CLI 2.1.287 and run in the desktop app on 2.1.309; an older
 Claude Code may not load them.
@@ -24,6 +25,7 @@ Then install each mod you want:
 
 ```bash
 claude plugin install usage-band@claude-mods
+claude plugin install feature-band@claude-mods
 ```
 
 At the prompt of a terminal session the same two steps are `/plugin marketplace add
