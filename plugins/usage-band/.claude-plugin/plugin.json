@@ -1,6 +1,6 @@
 {
   "name": "usage-band",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Shows 5-hour and weekly usage windows above the prompt",
   "author": {
     "name": "Peter"

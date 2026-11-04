@@ -80,8 +80,13 @@ export const register: Register = on => {
     const half = (cols - 4 * (shown.length - 1)) / shown.length
     const tiles = Math.max(MIN_TILES, Math.min(MAX_TILES, Math.floor((half - FIXED) / TILE_CELLS)))
 
+    // Other mods' bands draw above these bars, whichever order the engine runs the hooks in
+    const above = await next(e)
+
     return (
-      <Box gap={4}>
+      <Box flexDirection="column">
+        {above}
+        <Box gap={4}>
         {shown.map(l => {
           const pct = Math.max(0, Math.min(100, l.percentUsed))
           const color = tone(pct / 100)
@@ -102,6 +107,7 @@ export const register: Register = on => {
             </Box>
           )
         })}
+        </Box>
       </Box>
     )
   })
