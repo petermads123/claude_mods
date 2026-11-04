@@ -1,5 +1,11 @@
 # feature-band
 
+## 0.2.0 — 2026-11-04
+
+- Shows a fix's diagnosis as its own bar (`diagnose`, with the step: Reproduce, Hunt, Root
+  cause, Critique) while the template's `/fix` is diagnosing, before any round exists; amber
+  while it waits on a question.
+
 ## 0.1.0 — 2026-11-04
 
 - Shows two bars above the prompt while a feature from the template's pipeline is being built:

@@ -81,6 +81,31 @@ test('a round waiting on a question says so', async ($, on) => {
   await ui.unmount()
 })
 
+test('a fix being diagnosed shows its own bar instead of the round bar', async ($, on) => {
+  engine(on)
+  on('state.get', () =>
+    seed({
+      title: 'CSV quoting',
+      rounds: [],
+      current: 0,
+      step: 2,
+      steps: ['Reproduce', 'Hunt', 'Root cause', 'Critique'],
+      status: 'running',
+      note: 'three hunters out',
+      final: false,
+      diagnosis: true,
+    }),
+  )
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect((await ui.find({ type: 'Text', text: 'diagnose' }))?.text).toBe('diagnose')
+  expect((await ui.find({ type: 'Text', text: '2/4' }))?.text).toBe('2/4')
+  expect((await ui.find({ type: 'Text', text: 'Hunt' }))?.text).toBe('Hunt')
+  expect(await ui.find({ type: 'Text', text: 'round' })).toBeUndefined()
+  expect((await ui.find({ type: 'Text', text: 'engine' }))?.text).toBe('engine')
+  await ui.unmount()
+})
+
 test('nothing in flight leaves the band to the others', async ($, on) => {
   on('state.get', () => seed(null))
   engine(on)
