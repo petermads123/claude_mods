@@ -8,7 +8,7 @@ const progress = atom({ plugin: 'feature-band', key: 'progress' } as const, null
 // The template's pipeline state: development/<branch>/brief.json and r<n>-<slug>/round.json.
 // The schemas are documented in the template's development/README.md.
 const ROOT = 'development'
-const LIVE = ['concept', 'rounds', 'final']
+const LIVE = ['diagnosis', 'concept', 'rounds', 'final']
 const MAX_DEPTH = 4
 const POLL_MS = 4000
 
@@ -71,7 +71,12 @@ const scan = async ($: EngineInterface): Promise<Progress | null> => {
     const current = num(brief.current_round)
     const entry = entries.find(r => num(r.n) === current)
     const folder = path.slice(0, path.lastIndexOf('/'))
-    const state = entry ? await readJson($, `${folder}/r${num(entry.n)}-${str(entry.slug)}/round.json`) : null
+    const diagnosis = str(brief.status) === 'diagnosis'
+    const state = diagnosis
+      ? await readJson($, `${folder}/diagnosis/state.json`)
+      : entry
+        ? await readJson($, `${folder}/r${num(entry.n)}-${str(entry.slug)}/round.json`)
+        : null
     const steps = Array.isArray(state?.steps) ? state.steps.filter((s): s is string => typeof s === 'string') : []
 
     return {
@@ -83,6 +88,7 @@ const scan = async ($: EngineInterface): Promise<Progress | null> => {
       status: str(state?.status) || str(brief.status),
       note: str(state?.note),
       final: str(brief.status) === 'final',
+      diagnosis,
     }
   }
 
@@ -122,7 +128,7 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const p: Progress | null = await read($, progress)
 
-    if (e.props.hasSurvey || p === null || p.rounds.length === 0) {
+    if (e.props.hasSurvey || p === null || (p.rounds.length === 0 && !p.diagnosis)) {
       return next(e)
     }
 
@@ -153,6 +159,26 @@ export const register: Register = on => {
     }
 
     const waiting = p.status === 'blocked' ? 'waiting on a question' : p.status === 'failed' ? 'failed' : ''
+
+    // A fix being diagnosed has no rounds yet: one bar for the diagnosis's own steps.
+    if (p.diagnosis) {
+      return (
+        <Box flexDirection="column">
+          <Box gap={1}>
+            <Text dimColor>diagnose</Text>
+            {bar(stepCount ? stepsDone / stepCount : 0, color, 'diagnosis')}
+            <Text color={color}>
+              {Math.min(Math.max(p.step, 1), stepCount || 1)}/{stepCount || '?'}
+            </Text>
+            <Text bold>{p.steps[p.step - 1] ?? ''}</Text>
+            <Text color={waiting ? color : undefined} dimColor={!waiting} wrap="truncate-end">
+              {waiting || p.note || p.title}
+            </Text>
+          </Box>
+          {below}
+        </Box>
+      )
+    }
 
     return (
       <Box flexDirection="column">

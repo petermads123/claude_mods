@@ -9,6 +9,9 @@ export type Progress = {
   status: string
   note: string
   final: boolean
+  // A fix being diagnosed: step and steps are the diagnosis's, rounds is empty.
+  // Absent in values stored by 0.1.0, which read as not diagnosing.
+  diagnosis?: boolean
 }
 
 declare module 'claude-code' {
