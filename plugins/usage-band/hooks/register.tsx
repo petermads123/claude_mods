@@ -21,10 +21,11 @@ const STOPS: [number, number, number][] = [
 const TRACK = '#4A4A47'
 const MIN_TILES = 5
 const MAX_TILES = 40
-// Cells per tile with its gap; above 2 because ▰ draws wider than a cell on the desktop font
-const TILE_CELLS = 2.5
+// Cells per tile with its gap; above 2 because ▰ draws about 3.1 cells wide with its gap on the
+// desktop font, which a full-width row of tiles shows up
+const TILE_CELLS = 3.2
 // label, percent, reset time and their gaps
-const FIXED = 23
+const FIXED = 20
 const GAP = 4
 
 const hex = (n: number): string => Math.round(n).toString(16).padStart(2, '0')
