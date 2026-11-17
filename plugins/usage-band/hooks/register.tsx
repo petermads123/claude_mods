@@ -21,9 +21,9 @@ const STOPS: [number, number, number][] = [
 const TRACK = '#4A4A47'
 const MIN_TILES = 5
 const MAX_TILES = 40
-// Cells per tile with its gap; above 2 because ▰ draws about 2.9 cells wide with its gap on the
+// Cells per tile with its gap; above 2 because ▰ draws close to 3 cells wide with its gap on the
 // desktop font
-const TILE_CELLS = 2.95
+const TILE_CELLS = 3
 // Columns for the label and the percentage, the same on every bar so the bars line up
 const LABEL = 5
 const PCT = 4
@@ -159,7 +159,8 @@ export const register: Register = on => {
     }
 
     const { Box, Text } = $.ui.resolve(e)
-    const cols = e.viewport?.columns ?? 100
+    // The band's own width: the viewport's less what the engine keeps at the right end
+    const cols = e.props.bodyColumns ?? e.viewport?.columns ?? 100
     // Three bars: the 5-hour window on a row of its own, the two weekly windows beneath
     const rows = shown.length > 2 ? [shown.slice(0, 1), shown.slice(1)] : [shown]
 
@@ -197,7 +198,9 @@ export const register: Register = on => {
                       ))}
                     </Box>
                     <Text color={tone(pct / 100)}>{`${Math.round(pct)}%`.padStart(PCT)}</Text>
-                    <Text dimColor>{short(l.resetsAt, now)}</Text>
+                    <Text dimColor wrap="truncate-end">
+                      {short(l.resetsAt, now)}
+                    </Text>
                   </Box>
                 )
               })}
