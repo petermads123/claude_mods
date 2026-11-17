@@ -8,6 +8,8 @@
   cannot be reached the bar is left out.
 - With three bars, the 5-hour bar takes a full-width row of its own and the two weekly bars sit
   side by side beneath it.
+- The bars are sized to the band's own width, start at the same column and end at the same
+  column on both rows, and the reset time no longer wraps onto a second line.
 - Remembers the last Fable figure across sessions under a new stored value; the stored 5-hour and
   weekly figures are kept as they were.
 
