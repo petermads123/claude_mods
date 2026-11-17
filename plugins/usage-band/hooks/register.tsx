@@ -21,11 +21,14 @@ const STOPS: [number, number, number][] = [
 const TRACK = '#4A4A47'
 const MIN_TILES = 5
 const MAX_TILES = 40
-// Cells per tile with its gap; above 2 because ▰ draws about 3.1 cells wide with its gap on the
-// desktop font, which a full-width row of tiles shows up
-const TILE_CELLS = 3.2
+// Cells per tile with its gap; above 2 because ▰ draws about 2.9 cells wide with its gap on the
+// desktop font
+const TILE_CELLS = 2.95
+// Columns for the label and the percentage, the same on every bar so the bars line up
+const LABEL = 5
+const PCT = 4
 // label, percent, reset time and their gaps
-const FIXED = 20
+const FIXED = LABEL + PCT + 7 + 3
 const GAP = 4
 
 const hex = (n: number): string => Math.round(n).toString(16).padStart(2, '0')
@@ -160,6 +163,10 @@ export const register: Register = on => {
     // Three bars: the 5-hour window on a row of its own, the two weekly windows beneath
     const rows = shown.length > 2 ? [shown.slice(0, 1), shown.slice(1)] : [shown]
 
+    const widest = Math.max(...rows.map(row => row.length))
+    const each = (cols - GAP * (widest - 1)) / widest
+    const half = Math.max(MIN_TILES, Math.min(MAX_TILES, Math.floor((each - FIXED) / TILE_CELLS)))
+
     // Other mods' bands draw above these bars, whichever order the engine runs the hooks in
     const above = await next(e)
 
@@ -167,8 +174,9 @@ export const register: Register = on => {
       <Box flexDirection="column">
         {above}
         {rows.map((row, r) => {
-          const each = (cols - GAP * (row.length - 1)) / row.length
-          const tiles = Math.max(MIN_TILES, Math.min(MAX_TILES, Math.floor((each - FIXED) / TILE_CELLS)))
+          // A bar on a row of its own is as long as two bars side by side with what stands between
+          // them, so both rows end at the same column
+          const tiles = row.length < widest ? 2 * half + Math.round((FIXED + GAP) / TILE_CELLS) : half
 
           return (
             <Box key={String(r)} gap={GAP}>
@@ -177,8 +185,10 @@ export const register: Register = on => {
                 const filled = Math.round((pct / 100) * tiles)
 
                 return (
-                  <Box key={l.kind} flexGrow={1} width={`${100 / row.length}%`} gap={1}>
-                    <Text dimColor>{LABELS[l.kind]}</Text>
+                  <Box key={l.kind} gap={1}>
+                    <Box width={LABEL}>
+                      <Text dimColor>{LABELS[l.kind]}</Text>
+                    </Box>
                     <Box gap={1}>
                       {Array.from({ length: tiles }, (_, i) => (
                         <Text key={String(i)} color={i < filled ? tone(i / Math.max(1, tiles - 1)) : TRACK}>
@@ -186,7 +196,7 @@ export const register: Register = on => {
                         </Text>
                       ))}
                     </Box>
-                    <Text color={tone(pct / 100)}>{Math.round(pct)}%</Text>
+                    <Text color={tone(pct / 100)}>{`${Math.round(pct)}%`.padStart(PCT)}</Text>
                     <Text dimColor>{short(l.resetsAt, now)}</Text>
                   </Box>
                 )

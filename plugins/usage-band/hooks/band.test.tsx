@@ -78,7 +78,7 @@ test('Fable above 0% draws a third bar, fetched with the session login', async (
   const ui = await $.ui.mount(BAND)
 
   expect(await labels(ui)).toEqual(['5h', 'week', 'fable'])
-  expect((await ui.find({ type: 'Text', text: /^12%$/ }))?.text).toBe('12%')
+  expect((await ui.find({ type: 'Text', text: /12%$/ }))?.text.trim()).toBe('12%')
   expect(calls.fetches.length).toBe(1)
   expect(calls.fetches[0]?.init?.auth).toBe('h')
   expect((calls.stored as any)?.percentUsed).toBe(12)
@@ -115,7 +115,7 @@ test('a figure under 30 minutes old is shown without asking again', async ($, on
   const ui = await $.ui.mount(BAND)
 
   expect(calls.fetches.length).toBe(0)
-  expect((await ui.find({ type: 'Text', text: /^30%$/ }))?.text).toBe('30%')
+  expect((await ui.find({ type: 'Text', text: /30%$/ }))?.text.trim()).toBe('30%')
   await ui.unmount()
 })
 
