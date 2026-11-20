@@ -1,9 +1,10 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Progress, RoundView } from '../types'
+import type { Progress, RoundView, TestRun } from '../types'
 
 const progress = atom({ plugin: 'feature-band', key: 'progress' } as const, null)
+const tests = atom({ plugin: 'feature-band', key: 'tests' } as const, null)
 
 // The template's pipeline state: development/<branch>/brief.json and r<n>-<slug>/round.json.
 // The schemas are documented in the template's development/README.md.
@@ -11,6 +12,14 @@ const ROOT = 'development'
 const LIVE = ['diagnosis', 'concept', 'rounds', 'final']
 const MAX_DEPTH = 4
 const POLL_MS = 4000
+
+// A pytest run's live progress, written by the template's .claude/hooks/pytest_progress.py.
+const TESTS_FILE = '.pytest_cache/progress.json'
+const TESTS_POLL_MS = 1000
+// A finished run stays on show this long.
+const LINGER_MS = 15000
+// A run that has written nothing for this long was killed, not slow.
+const STALE_MS = 120000
 
 const TRACK = '#4A4A47'
 const DONE = '#9CCF9C'
@@ -95,6 +104,40 @@ const scan = async ($: EngineInterface): Promise<Progress | null> => {
   return null
 }
 
+/** The pytest run to show at `nowMs`: one in flight, or one that ended a moment ago. */
+export const liveRun = (raw: Json | null, nowMs: number): TestRun | null => {
+  if (raw === null || num(raw.updated) <= 0) return null
+
+  const finished = raw.finished === true
+  const age = nowMs - num(raw.updated) * 1000
+  if (age > (finished ? LINGER_MS : STALE_MS)) return null
+
+  return {
+    total: num(raw.total),
+    done: num(raw.done),
+    passed: num(raw.passed),
+    failed: num(raw.failed),
+    skipped: num(raw.skipped),
+    current: str(raw.current),
+    finished,
+  }
+}
+
+const refreshTests = async ($: EngineInterface): Promise<void> => {
+  const raw = (await $.fs.exists(TESTS_FILE).catch(() => false)) ? await readJson($, TESTS_FILE) : null
+  const next = liveRun(raw, await $.clock.now())
+  const now = await read($, tests)
+  if (JSON.stringify(next) !== JSON.stringify(now)) {
+    await update($, tests, () => next)
+  }
+}
+
+/** `tests/test_csv.py::test_quotes[a]` as `test_csv.py::test_quotes[a]`. */
+const shortId = (nodeid: string): string => {
+  const [file = '', ...rest] = nodeid.split('::')
+  return [file.slice(file.lastIndexOf('/') + 1), ...rest].join('::')
+}
+
 const refresh = async ($: EngineInterface): Promise<void> => {
   const next = await scan($).catch(() => null)
   const now = await read($, progress)
@@ -108,12 +151,18 @@ const stateColor = (status: string): string =>
 
 export const register: Register = on => {
   let timer: { cancel: () => void } | undefined
+  let testsTimer: { cancel: () => void } | undefined
 
   on('session.start', async ($, e, next) => {
     timer?.cancel()
+    testsTimer?.cancel()
     await refresh($)
+    await refreshTests($).catch(() => undefined)
     timer = $.clock.every(POLL_MS, () => {
       void refresh($)
+    })
+    testsTimer = $.clock.every(TESTS_POLL_MS, () => {
+      void refreshTests($).catch(() => undefined)
     })
 
     return next(e)
@@ -126,9 +175,11 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const p: Progress | null = await read($, progress)
+    const stored: Progress | null = await read($, progress)
+    const t: TestRun | null = await read($, tests)
+    const p = stored !== null && (stored.rounds.length > 0 || stored.diagnosis) ? stored : null
 
-    if (e.props.hasSurvey || p === null || (p.rounds.length === 0 && !p.diagnosis)) {
+    if (e.props.hasSurvey || (p === null && t === null)) {
       return next(e)
     }
 
@@ -136,6 +187,56 @@ export const register: Register = on => {
     const { Box, Text } = $.ui.resolve(e)
     const cols = e.props.bodyColumns ?? e.viewport?.columns ?? 100
     const tiles = Math.max(MIN_TILES, Math.min(MAX_TILES, Math.floor((cols / 2 - FIXED) / TILE_CELLS)))
+
+    // The test run sits on top: green tiles for tests that are through, red for the failed.
+    const testRow = () => {
+      if (t === null) return null
+
+      const share = (n: number) => (t.total > 0 ? Math.round((Math.min(n, t.total) / t.total) * tiles) : 0)
+      const red = t.failed > 0 ? Math.max(1, share(t.failed)) : 0
+      const filled = Math.max(red, share(t.done))
+      const color = t.failed > 0 ? FAILED : t.finished ? DONE : ACTIVE
+      const tail = !t.finished
+        ? shortId(t.current)
+        : t.failed > 0
+          ? 'finished with failures'
+          : t.total > 0
+            ? 'all passed'
+            : 'no tests ran'
+
+      return (
+        <Box gap={1}>
+          <Text dimColor>tests</Text>
+          <Box gap={1}>
+            {Array.from({ length: tiles }, (_, i) => (
+              <Text key={String(i)} color={i < filled - red ? DONE : i < filled ? FAILED : TRACK}>
+                ▰
+              </Text>
+            ))}
+          </Box>
+          <Text color={color}>
+            {t.done}/{t.total}
+          </Text>
+          <Text color={DONE}>✓ {t.passed}</Text>
+          <Text color={t.failed > 0 ? FAILED : undefined} dimColor={t.failed === 0} bold={t.failed > 0}>
+            ✗ {t.failed}
+          </Text>
+          {t.skipped > 0 ? <Text dimColor>○ {t.skipped}</Text> : null}
+          <Text dimColor wrap="truncate-end">
+            {tail}
+          </Text>
+        </Box>
+      )
+    }
+
+    if (p === null) {
+      return (
+        <Box flexDirection="column">
+          {testRow()}
+          {below}
+        </Box>
+      )
+    }
 
     const merged = p.rounds.filter(r => r.status === 'merged').length
     const total = p.rounds.length
@@ -164,6 +265,7 @@ export const register: Register = on => {
     if (p.diagnosis) {
       return (
         <Box flexDirection="column">
+          {testRow()}
           <Box gap={1}>
             <Text dimColor>diagnose</Text>
             {bar(stepCount ? stepsDone / stepCount : 0, color, 'diagnosis')}
@@ -182,6 +284,7 @@ export const register: Register = on => {
 
     return (
       <Box flexDirection="column">
+        {testRow()}
         <Box gap={1}>
           <Text dimColor>round</Text>
           {bar(roundDone / total, p.final ? DONE : ACTIVE, 'rounds')}
