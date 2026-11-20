@@ -1,5 +1,16 @@
 # feature-band
 
+## 0.3.0 — 2026-11-20
+
+- Shows a third bar, `tests`, on top of the round and step bars while pytest runs: how many
+  tests are through out of those collected, green tiles for the ones through and red for the
+  failed, the passed (✓), failed (✗) and skipped (○) counts, and the test running now. It
+  updates every second, stays for a few seconds after the run with the result, then goes.
+- Needs a repo on template 0.2.4 or later, whose pytest runs write
+  `.pytest_cache/progress.json`. It shows for any pytest run there, also with no feature in
+  flight; without that file nothing changes.
+- Nothing stored by earlier versions is affected: the test run is a new value.
+
 ## 0.2.0 — 2026-11-04
 
 - Shows a fix's diagnosis as its own bar (`diagnose`, with the step: Reproduce, Hunt, Root
